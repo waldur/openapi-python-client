@@ -3,9 +3,9 @@ from typing import Any, TypeVar, Optional, BinaryIO, TextIO, TYPE_CHECKING, Gene
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
+from .. import types
 {% if model.is_multipart_body %}
 import json
-from .. import types
 {% endif %}
 
 from ..types import UNSET, Unset
