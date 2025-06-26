@@ -6,13 +6,6 @@ import httpx
 
 
 {% set attrs_info = {
-    "raise_on_unexpected_status": namespace(
-        type="bool",
-        default="field(default=False, kw_only=True)",
-        docstring="Whether or not to raise an errors.UnexpectedStatus if the API returns a status code"
-            " that was not documented in the source OpenAPI document. Can also be provided as a keyword"
-            " argument to the constructor."
-    ),
     "token": namespace(type="str", default="", docstring="The token to use for authentication"),
     "prefix": namespace(type="str", default='"Bearer"', docstring="The prefix to use for the Authorization header"),
     "auth_header_name": namespace(type="str", default='"Authorization"', docstring="The name of the Authorization header"),
@@ -54,14 +47,8 @@ class Client:
         ``httpx_args``: A dictionary of additional arguments to be passed to the ``httpx.Client`` and ``httpx.AsyncClient`` constructor.
 {% endmacro %}
 {{ httpx_args_docstring() }}
-{% if not config.docstrings_on_attributes %}
-
-    Attributes:
-        {{ attr_in_class_docstring("raise_on_unexpected_status") | wordwrap(101) | indent(12) }}
-{% endif %}
     """
 {% macro attributes() %}
-    {{ declare_attr("raise_on_unexpected_status") | indent(4) }}
     _base_url: str = field(alias="base_url")
     _cookies: dict[str, str] = field(factory=dict, kw_only=True, alias="cookies")
     _headers: dict[str, str] = field(factory=dict, kw_only=True, alias="headers")
@@ -175,7 +162,6 @@ class AuthenticatedClient:
 {% if not config.docstrings_on_attributes %}
 
     Attributes:
-        {{ attr_in_class_docstring("raise_on_unexpected_status") | wordwrap(101) | indent(12) }}
         {{ attr_in_class_docstring("token") | indent(8) }}
         {{ attr_in_class_docstring("prefix") | indent(8) }}
         {{ attr_in_class_docstring("auth_header_name") | indent(8) }}
