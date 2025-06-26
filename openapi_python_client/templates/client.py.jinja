@@ -7,7 +7,7 @@ import httpx
 
 {% set attrs_info = {
     "token": namespace(type="str", default="", docstring="The token to use for authentication"),
-    "prefix": namespace(type="str", default='"Bearer"', docstring="The prefix to use for the Authorization header"),
+    "prefix": namespace(type="str", default='"Token"', docstring="The prefix to use for the Authorization header"),
     "auth_header_name": namespace(type="str", default='"Authorization"', docstring="The name of the Authorization header"),
 } %}
 
