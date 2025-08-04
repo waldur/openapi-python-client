@@ -14,8 +14,13 @@ from ... import errors
 {% from "endpoint_macros.py.jinja" import header_params, cookie_params, query_params,
     arguments, client, kwargs, parse_response, docstring, body_to_kwarg %}
 
+{% if endpoint.method.lower() == "head" %}
+{% set return_string = "int" %}
+{% set parsed_responses = True %}
+{% else %}
 {% set return_string = endpoint.response_type() %}
 {% set parsed_responses = (endpoint.responses | length > 0) and return_string != "Any" %}
+{% endif %}
 
 def _get_kwargs(
     {{ arguments(endpoint, include_client=False) | indent(4) }}
@@ -66,6 +71,17 @@ def _get_kwargs(
 
 
 def _parse_response(*, client: Union[AuthenticatedClient, Client], response: httpx.Response) -> {{ return_string }}:
+{% if endpoint.method.lower() == "head" %}
+    if response.status_code == HTTPStatus.OK:
+        try:
+            return int(response.headers["x-result-count"])
+        except KeyError:
+            raise errors.UnexpectedStatus(response.status_code, b"Expected 'X-Result-Count' header for HEAD request, but it was not found.")
+        except ValueError:
+            count_val = response.headers.get("x-result-count")
+            msg = f"Expected 'X-Result-Count' header to be an integer, but got '{count_val}'."
+            raise errors.UnexpectedStatus(response.status_code, msg.encode())
+{% else %}
     {% for response in endpoint.responses %}
     if response.status_code == {{ response.status_code.value }}:
         {% if parsed_responses %}{% import "property_templates/" + response.prop.template as prop_template %}
@@ -81,6 +97,7 @@ def _parse_response(*, client: Union[AuthenticatedClient, Client], response: htt
         return None
         {% endif %}
     {% endfor %}
+{% endif %}
     raise errors.UnexpectedStatus(response.status_code, response.content)
 
 
