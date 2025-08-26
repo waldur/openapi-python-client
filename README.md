@@ -21,6 +21,7 @@ This tool focuses on creating the best developer experience for Python developer
 1. Using all the latest and greatest Python features like type annotations and dataclasses.
 2. Having documentation and usage instructions specific to this one generator.
 3. Being written in Python with Jinja2 templates, making it easier to improve and extend for Python developers. It's also much easier to install and use if you already have Python.
+4. Supporting extensibility through custom templates - including automatic pagination support for APIs using `page`/`page_size` parameters.
 
 ## Installation
 
@@ -58,6 +59,116 @@ openapi-python-client generate \
 ```
 
 _Be forewarned, this is a beta-level feature in the sense that the API exposed in the templates is undocumented and unstable._
+
+### Adding Automatic Pagination Support
+
+For APIs that use `page`/`page_size` query parameters for pagination, you can automatically include `PaginatedEndpoint` support in your generated SDK using custom templates and post-generation hooks.
+
+#### Quick Setup
+
+1. **Create custom template directory:**
+```bash
+mkdir templates_with_pagination
+```
+
+2. **Create custom `package_init.py.jinja`:**
+```jinja2
+{% from "helpers.jinja" import safe_docstring %}
+
+{{ safe_docstring(package_description) }}
+from .client import AuthenticatedClient, Client
+
+# Import pagination utilities if available
+try:
+    from .pagination import PaginatedEndpoint, PaginationConfig, paginate
+    _HAS_PAGINATION = True
+except ImportError:
+    _HAS_PAGINATION = False
+
+if _HAS_PAGINATION:
+    __all__ = (
+        "AuthenticatedClient",
+        "Client",
+        "PaginatedEndpoint",
+        "PaginationConfig", 
+        "paginate",
+    )
+else:
+    __all__ = (
+        "AuthenticatedClient",
+        "Client",
+    )
+```
+
+3. **Create post-generation hook script** (`add_pagination.py`) that adds a `pagination.py` module with `PaginatedEndpoint`, `PaginationConfig`, and helper functions.
+
+4. **Create config file with hook:**
+```yaml
+post_hooks:
+  - "python /path/to/add_pagination.py"
+  - "ruff check . --fix"
+  - "ruff format ."
+```
+
+5. **Generate with pagination support:**
+```bash
+openapi-python-client generate \
+  --path your-api.yaml \
+  --custom-template-path=templates_with_pagination \
+  --config=config_with_pagination.yaml
+```
+
+#### Usage
+
+The generated SDK will include built-in pagination support:
+
+```python
+from your_api_client import Client, PaginatedEndpoint
+from your_api_client.api.users import list_users
+
+# Create client
+client = Client(base_url="https://api.example.com")
+
+# Create paginated wrapper
+paginated_users = PaginatedEndpoint(list_users.sync, list_users.asyncio)
+
+# Fetch all users across all pages automatically
+all_users = paginated_users.fetch_all(client=client)
+
+# With custom configuration
+from your_api_client import PaginationConfig
+config = PaginationConfig(page_size=50, max_pages=10)
+users = paginated_users.fetch_all(config=config, client=client, status="active")
+
+# Memory-efficient page iteration  
+for page in paginated_users.iter_pages(client=client):
+    for user in page:
+        process_user(user)
+
+# Async support
+all_users = await paginated_users.fetch_all_async(client=client)
+```
+
+#### Features
+
+- **Automatic pagination handling** - Fetches all pages until no more data
+- **Configurable** - Control page size, max pages, starting page
+- **Memory efficient** - Option to process pages one at a time  
+- **Sync and async support** - Works with both synchronous and asynchronous code
+- **Type safe** - Full type hints and IDE autocomplete support
+- **Zero dependencies** - Pagination code is bundled with the generated SDK
+
+#### Complete Implementation
+
+For a ready-to-use implementation, see these files in this repository:
+
+- [`templates_with_pagination/package_init.py.jinja`](templates_with_pagination/package_init.py.jinja) - Custom template that exports pagination classes
+- [`add_pagination_hook.py`](add_pagination_hook.py) - Post-generation hook that adds the pagination module  
+- [`config_with_pagination.yaml`](config_with_pagination.yaml) - Configuration file with the hook
+- [`verify_pagination.py`](verify_pagination.py) - Script to verify pagination was added successfully
+- [`PAGINATION_QUICK_START.md`](PAGINATION_QUICK_START.md) - Quick setup guide
+
+You can copy these files and use them directly, or use them as a reference for your own implementation.
 
 ## What You Get
 

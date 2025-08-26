@@ -1,0 +1,265 @@
+"""
+Pagination utilities for {{ project_name }}.
+
+This module provides utilities to automatically handle pagination for list endpoints
+that use page/page_size query parameters.
+"""
+
+from typing import Callable, TypeVar, Optional, AsyncIterator, Iterator
+from dataclasses import dataclass
+
+T = TypeVar('T')
+
+
+@dataclass
+class PaginationConfig:
+    """Configuration for pagination behavior."""
+    page_size: int = 100
+    max_pages: Optional[int] = None  # Set to limit the number of pages fetched
+    start_page: int = 1
+
+
+class PaginatedEndpoint:
+    """
+    Wrapper for paginated list endpoints.
+    
+    Example usage:
+        from {{ package_name }}.api.users import list_users
+        from {{ package_name }} import Client
+        from {{ package_name }}.pagination import PaginatedEndpoint
+        
+        client = Client(base_url="https://api.example.com")
+        
+        # Create a paginated endpoint wrapper
+        paginated_users = PaginatedEndpoint(list_users.sync, list_users.asyncio)
+        
+        # Fetch all users
+        all_users = paginated_users.fetch_all(client=client)
+        
+        # Fetch with filters
+        active_users = paginated_users.fetch_all(client=client, status="active")
+    """
+    
+    def __init__(self, endpoint_func: Callable, async_func: Callable = None):
+        """
+        Initialize a paginated endpoint wrapper.
+        
+        Args:
+            endpoint_func: The synchronous endpoint function (e.g., list_users.sync)
+            async_func: The async endpoint function (e.g., list_users.asyncio)
+        """
+        self.endpoint_func = endpoint_func
+        self.async_func = async_func
+        
+    def fetch_all(self, config: PaginationConfig = None, **kwargs) -> list:
+        """
+        Fetch all pages from the endpoint.
+        
+        Args:
+            config: Pagination configuration
+            **kwargs: Arguments to pass to the endpoint function
+            
+        Returns:
+            List of all items from all pages
+        """
+        if config is None:
+            config = PaginationConfig()
+            
+        all_items = []
+        current_page = config.start_page
+        pages_fetched = 0
+        
+        while True:
+            # Check if we've reached the max pages limit
+            if config.max_pages and pages_fetched >= config.max_pages:
+                break
+                
+            # Fetch a page
+            items = self.endpoint_func(
+                page=current_page,
+                page_size=config.page_size,
+                **kwargs
+            )
+            
+            # If no items returned, we've reached the end
+            if not items:
+                break
+                
+            # Add items to our collection
+            if isinstance(items, list):
+                all_items.extend(items)
+                # If we got fewer items than page_size, we've reached the end
+                if len(items) < config.page_size:
+                    break
+            else:
+                # Single item response, add it and stop
+                all_items.append(items)
+                break
+                
+            current_page += 1
+            pages_fetched += 1
+        
+        return all_items
+    
+    async def fetch_all_async(self, config: PaginationConfig = None, **kwargs) -> list:
+        """
+        Asynchronously fetch all pages from the endpoint.
+        
+        Args:
+            config: Pagination configuration
+            **kwargs: Arguments to pass to the endpoint function
+            
+        Returns:
+            List of all items from all pages
+        """
+        if self.async_func is None:
+            raise ValueError("Async function not provided")
+            
+        if config is None:
+            config = PaginationConfig()
+            
+        all_items = []
+        current_page = config.start_page
+        pages_fetched = 0
+        
+        while True:
+            # Check if we've reached the max pages limit
+            if config.max_pages and pages_fetched >= config.max_pages:
+                break
+                
+            # Fetch a page
+            items = await self.async_func(
+                page=current_page,
+                page_size=config.page_size,
+                **kwargs
+            )
+            
+            # If no items returned, we've reached the end
+            if not items:
+                break
+                
+            # Add items to our collection
+            if isinstance(items, list):
+                all_items.extend(items)
+                # If we got fewer items than page_size, we've reached the end
+                if len(items) < config.page_size:
+                    break
+            else:
+                # Single item response, add it and stop
+                all_items.append(items)
+                break
+                
+            current_page += 1
+            pages_fetched += 1
+        
+        return all_items
+    
+    def iter_pages(self, config: PaginationConfig = None, **kwargs) -> Iterator[list]:
+        """
+        Iterate over pages one at a time.
+        
+        This is useful for processing large datasets without loading everything into memory.
+        
+        Args:
+            config: Pagination configuration
+            **kwargs: Arguments to pass to the endpoint function
+            
+        Yields:
+            Each page of items
+        """
+        if config is None:
+            config = PaginationConfig()
+            
+        current_page = config.start_page
+        pages_fetched = 0
+        
+        while True:
+            # Check if we've reached the max pages limit
+            if config.max_pages and pages_fetched >= config.max_pages:
+                break
+                
+            # Fetch a page
+            items = self.endpoint_func(
+                page=current_page,
+                page_size=config.page_size,
+                **kwargs
+            )
+            
+            # If no items returned, we've reached the end
+            if not items:
+                break
+                
+            yield items
+            
+            # If we got fewer items than page_size, we've reached the end
+            if isinstance(items, list) and len(items) < config.page_size:
+                break
+                
+            current_page += 1
+            pages_fetched += 1
+    
+    async def iter_pages_async(self, config: PaginationConfig = None, **kwargs) -> AsyncIterator[list]:
+        """
+        Asynchronously iterate over pages one at a time.
+        
+        Args:
+            config: Pagination configuration
+            **kwargs: Arguments to pass to the endpoint function
+            
+        Yields:
+            Each page of items
+        """
+        if self.async_func is None:
+            raise ValueError("Async function not provided")
+            
+        if config is None:
+            config = PaginationConfig()
+            
+        current_page = config.start_page
+        pages_fetched = 0
+        
+        while True:
+            # Check if we've reached the max pages limit
+            if config.max_pages and pages_fetched >= config.max_pages:
+                break
+                
+            # Fetch a page
+            items = await self.async_func(
+                page=current_page,
+                page_size=config.page_size,
+                **kwargs
+            )
+            
+            # If no items returned, we've reached the end
+            if not items:
+                break
+                
+            yield items
+            
+            # If we got fewer items than page_size, we've reached the end
+            if isinstance(items, list) and len(items) < config.page_size:
+                break
+                
+            current_page += 1
+            pages_fetched += 1
+
+
+def paginate(sync_func: Callable, async_func: Callable = None) -> PaginatedEndpoint:
+    """
+    Convenience function to create a PaginatedEndpoint.
+    
+    Args:
+        sync_func: The synchronous endpoint function
+        async_func: The async endpoint function (optional)
+        
+    Returns:
+        PaginatedEndpoint instance
+        
+    Example:
+        from {{ package_name }}.api.users import list_users
+        from {{ package_name }}.pagination import paginate
+        
+        paginated_users = paginate(list_users.sync, list_users.asyncio)
+        all_users = paginated_users.fetch_all(client=client)
+    """
+    return PaginatedEndpoint(sync_func, async_func)
