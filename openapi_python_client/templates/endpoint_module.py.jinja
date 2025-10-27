@@ -78,12 +78,14 @@ def _parse_response(*, client: Union[AuthenticatedClient, Client], response: htt
         try:
             return int(response.headers["x-result-count"])
         except KeyError:
-            raise errors.UnexpectedStatus(response.status_code, b"Expected 'X-Result-Count' header for HEAD request, but it was not found.")
+            raise errors.UnexpectedStatus(response.status_code, b"Expected 'X-Result-Count' header for HEAD request, but it was not found.", response.url)
         except ValueError:
             count_val = response.headers.get("x-result-count")
             msg = f"Expected 'X-Result-Count' header to be an integer, but got '{count_val}'."
-            raise errors.UnexpectedStatus(response.status_code, msg.encode())
+            raise errors.UnexpectedStatus(response.status_code, msg.encode(), response.url)
 {% else %}
+    if response.status_code == 404:
+        raise errors.UnexpectedStatus(response.status_code, response.content, response.url)
     {% for response in endpoint.responses %}
     if response.status_code == {{ response.status_code.value }}:
         {% if parsed_responses %}{% import "property_templates/" + response.prop.template as prop_template %}
@@ -100,7 +102,7 @@ def _parse_response(*, client: Union[AuthenticatedClient, Client], response: htt
         {% endif %}
     {% endfor %}
 {% endif %}
-    raise errors.UnexpectedStatus(response.status_code, response.content)
+    raise errors.UnexpectedStatus(response.status_code, response.content, response.url)
 
 
 def _build_response(*, client: Union[AuthenticatedClient, Client], response: httpx.Response) -> Response[{{ return_string }}]:
