@@ -54,7 +54,9 @@ def _get_kwargs(
 {% for body in endpoint.bodies %}
     if isinstance(body, {{body.prop.get_type_string() }}):
         {{ body_to_kwarg(body) | indent(8) }}
+        {% if body.content_type != "multipart/form-data" %}{# Need httpx to set the boundary automatically #}
         headers["Content-Type"] = "{{ body.content_type }}"
+        {% endif %}
 {% endfor %}
 {% elif endpoint.bodies | length == 1 %}
 {% set body = endpoint.bodies[0] %}
@@ -76,12 +78,14 @@ def _parse_response(*, client: Union[AuthenticatedClient, Client], response: htt
         try:
             return int(response.headers["x-result-count"])
         except KeyError:
-            raise errors.UnexpectedStatus(response.status_code, b"Expected 'X-Result-Count' header for HEAD request, but it was not found.")
+            raise errors.UnexpectedStatus(response.status_code, b"Expected 'X-Result-Count' header for HEAD request, but it was not found.", response.url)
         except ValueError:
             count_val = response.headers.get("x-result-count")
             msg = f"Expected 'X-Result-Count' header to be an integer, but got '{count_val}'."
-            raise errors.UnexpectedStatus(response.status_code, msg.encode())
+            raise errors.UnexpectedStatus(response.status_code, msg.encode(), response.url)
 {% else %}
+    if response.status_code == 404:
+        raise errors.UnexpectedStatus(response.status_code, response.content, response.url)
     {% for response in endpoint.responses %}
     if response.status_code == {{ response.status_code.value }}:
         {% if parsed_responses %}{% import "property_templates/" + response.prop.template as prop_template %}
@@ -98,7 +102,7 @@ def _parse_response(*, client: Union[AuthenticatedClient, Client], response: htt
         {% endif %}
     {% endfor %}
 {% endif %}
-    raise errors.UnexpectedStatus(response.status_code, response.content)
+    raise errors.UnexpectedStatus(response.status_code, response.content, response.url)
 
 
 def _build_response(*, client: Union[AuthenticatedClient, Client], response: httpx.Response) -> Response[{{ return_string }}]:
