@@ -2,13 +2,39 @@
 Pagination utilities for {{ project_name }}.
 
 This module provides utilities to automatically handle pagination for list endpoints
-that use page/page_size query parameters.
+that use page/page_size query parameters using Link headers for pagination detection.
 """
 
-from typing import Callable, TypeVar, Optional, AsyncIterator, Iterator
+from typing import Callable, TypeVar, Optional, AsyncIterator, Iterator, Union
 from dataclasses import dataclass
+import re
 
 T = TypeVar('T')
+
+
+def _parse_link_header(link_header: str) -> dict[str, str]:
+    """Parse Link header to extract pagination URLs."""
+    links = {}
+    if not link_header:
+        return links
+    
+    # Split on commas, but be careful about URLs that might contain commas
+    parts = link_header.split(',')
+    for part in parts:
+        part = part.strip()
+        if ';' not in part:
+            continue
+            
+        url_part, rel_part = part.split(';', 1)
+        url = url_part.strip(' <>')
+        
+        # Extract rel value
+        rel_match = re.search(r'rel="([^"]+)"', rel_part)
+        if rel_match:
+            rel = rel_match.group(1)
+            links[rel] = url
+    
+    return links
 
 
 @dataclass
@@ -21,7 +47,7 @@ class PaginationConfig:
 
 class PaginatedEndpoint:
     """
-    Wrapper for paginated list endpoints.
+    Wrapper for paginated list endpoints using Link header pagination.
     
     Example usage:
         from {{ package_name }}.api.users import list_users
@@ -31,7 +57,7 @@ class PaginatedEndpoint:
         client = Client(base_url="https://api.example.com")
         
         # Create a paginated endpoint wrapper
-        paginated_users = PaginatedEndpoint(list_users.sync, list_users.asyncio)
+        paginated_users = PaginatedEndpoint(list_users.sync_detailed, list_users.asyncio_detailed)
         
         # Fetch all users
         all_users = paginated_users.fetch_all(client=client)
@@ -45,15 +71,15 @@ class PaginatedEndpoint:
         Initialize a paginated endpoint wrapper.
         
         Args:
-            endpoint_func: The synchronous endpoint function (e.g., list_users.sync)
-            async_func: The async endpoint function (e.g., list_users.asyncio)
+            endpoint_func: The sync_detailed endpoint function (e.g., list_users.sync_detailed)
+            async_func: The asyncio_detailed endpoint function (e.g., list_users.asyncio_detailed)
         """
         self.endpoint_func = endpoint_func
         self.async_func = async_func
         
     def fetch_all(self, config: PaginationConfig = None, **kwargs) -> list:
         """
-        Fetch all pages from the endpoint.
+        Fetch all pages from the endpoint using Link headers.
         
         Args:
             config: Pagination configuration
@@ -74,12 +100,19 @@ class PaginatedEndpoint:
             if config.max_pages and pages_fetched >= config.max_pages:
                 break
                 
-            # Fetch a page
-            items = self.endpoint_func(
-                page=current_page,
-                page_size=config.page_size,
-                **kwargs
-            )
+            try:
+                # Fetch a page using detailed function to get headers
+                response = self.endpoint_func(
+                    page=current_page,
+                    page_size=config.page_size,
+                    **kwargs
+                )
+            except Exception:
+                # If we get an error (like 404), we've likely reached the end
+                break
+            
+            # Extract items from response
+            items = response.parsed if hasattr(response, 'parsed') else response
             
             # If no items returned, we've reached the end
             if not items:
@@ -88,12 +121,19 @@ class PaginatedEndpoint:
             # Add items to our collection
             if isinstance(items, list):
                 all_items.extend(items)
-                # If we got fewer items than page_size, we've reached the end
-                if len(items) < config.page_size:
-                    break
             else:
                 # Single item response, add it and stop
                 all_items.append(items)
+                break
+            
+            # Check Link header for next page
+            has_next = False
+            if hasattr(response, 'headers') and 'link' in response.headers:
+                links = _parse_link_header(response.headers['link'])
+                has_next = 'next' in links
+            
+            # If no "next" link, we've reached the end
+            if not has_next:
                 break
                 
             current_page += 1
@@ -103,7 +143,7 @@ class PaginatedEndpoint:
     
     async def fetch_all_async(self, config: PaginationConfig = None, **kwargs) -> list:
         """
-        Asynchronously fetch all pages from the endpoint.
+        Asynchronously fetch all pages from the endpoint using Link headers.
         
         Args:
             config: Pagination configuration
@@ -127,12 +167,19 @@ class PaginatedEndpoint:
             if config.max_pages and pages_fetched >= config.max_pages:
                 break
                 
-            # Fetch a page
-            items = await self.async_func(
-                page=current_page,
-                page_size=config.page_size,
-                **kwargs
-            )
+            try:
+                # Fetch a page using detailed function to get headers
+                response = await self.async_func(
+                    page=current_page,
+                    page_size=config.page_size,
+                    **kwargs
+                )
+            except Exception:
+                # If we get an error (like 404), we've likely reached the end
+                break
+            
+            # Extract items from response
+            items = response.parsed if hasattr(response, 'parsed') else response
             
             # If no items returned, we've reached the end
             if not items:
@@ -141,12 +188,19 @@ class PaginatedEndpoint:
             # Add items to our collection
             if isinstance(items, list):
                 all_items.extend(items)
-                # If we got fewer items than page_size, we've reached the end
-                if len(items) < config.page_size:
-                    break
             else:
                 # Single item response, add it and stop
                 all_items.append(items)
+                break
+            
+            # Check Link header for next page
+            has_next = False
+            if hasattr(response, 'headers') and 'link' in response.headers:
+                links = _parse_link_header(response.headers['link'])
+                has_next = 'next' in links
+            
+            # If no "next" link, we've reached the end
+            if not has_next:
                 break
                 
             current_page += 1
@@ -249,8 +303,8 @@ def paginate(sync_func: Callable, async_func: Callable = None) -> PaginatedEndpo
     Convenience function to create a PaginatedEndpoint.
     
     Args:
-        sync_func: The synchronous endpoint function
-        async_func: The async endpoint function (optional)
+        sync_func: The sync_detailed endpoint function
+        async_func: The asyncio_detailed endpoint function (optional)
         
     Returns:
         PaginatedEndpoint instance
@@ -259,7 +313,7 @@ def paginate(sync_func: Callable, async_func: Callable = None) -> PaginatedEndpo
         from {{ package_name }}.api.users import list_users
         from {{ package_name }}.pagination import paginate
         
-        paginated_users = paginate(list_users.sync, list_users.asyncio)
+        paginated_users = paginate(list_users.sync_detailed, list_users.asyncio_detailed)
         all_users = paginated_users.fetch_all(client=client)
     """
     return PaginatedEndpoint(sync_func, async_func)
