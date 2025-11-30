@@ -89,7 +89,7 @@ _kwargs["json"] = {{ property.python_name }}
 {% endmacro %}
 
 {# The all the kwargs passed into an endpoint (and variants thereof)) #}
-{% macro arguments(endpoint, include_client=True) %}
+{% macro arguments(endpoint, include_client=True, skip_pagination=False) %}
 {# path parameters #}
 {% for parameter in endpoint.path_parameters %}
 {{ parameter.to_string() }},
@@ -117,7 +117,9 @@ body: Union[
 {% endif %}
 {# query parameters #}
 {% for parameter in endpoint.query_parameters %}
+{% if not skip_pagination or parameter.name not in ['page', 'page_size'] %}
 {{ parameter.to_string() }},
+{% endif %}
 {% endfor %}
 {% for parameter in endpoint.header_parameters %}
 {{ parameter.to_string() }},
@@ -129,7 +131,7 @@ body: Union[
 {% endmacro %}
 
 {# Just lists all kwargs to endpoints as name=name for passing to other functions #}
-{% macro kwargs(endpoint, include_client=True) %}
+{% macro kwargs(endpoint, include_client=True, skip_pagination=False) %}
 {% for parameter in endpoint.path_parameters %}
 {{ parameter.python_name }}={{ parameter.python_name }},
 {% endfor %}
@@ -140,7 +142,9 @@ client=client,
 body=body,
 {% endif %}
 {% for parameter in endpoint.query_parameters %}
+{% if not skip_pagination or parameter.name not in ['page', 'page_size'] %}
 {{ parameter.python_name }}={{ parameter.python_name }},
+{% endif %}
 {% endfor %}
 {% for parameter in endpoint.header_parameters %}
 {{ parameter.python_name }}={{ parameter.python_name }},
