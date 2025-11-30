@@ -172,6 +172,10 @@ class Project:
         types_path = self.package_dir / "types.py"
         types_path.write_text(types_template.render(), encoding=self.config.file_encoding)
 
+        utils_template = self.env.get_template("utils.py.jinja")
+        utils_path = self.package_dir / "utils.py"
+        utils_path.write_text(utils_template.render(), encoding=self.config.file_encoding)
+
     def _build_metadata(self) -> None:
         if self.config.meta_type == MetaType.NONE:
             return
